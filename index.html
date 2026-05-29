@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🎬 TAPI TAPI GM CONTROL</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><text y='52' font-size='56'>🎬</text></svg>">
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, onValue, set, remove, push, onDisconnect, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  // ====================================================
+  // ★ ここを自分のFirebase設定に書き換えてください ★
+  // ====================================================
+ const firebaseConfig = {
+  apiKey: "AIzaSyAymLE_WA4c8i71_T93qS3rYOvO_K4UhBI",
+  authDomain: "no-same-answer.firebaseapp.com",
+  databaseURL: "https://no-same-answer-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "no-same-answer",
+  storageBucket: "no-same-answer.firebasestorage.app",
+  messagingSenderId: "375361422194",
+  appId: "1:375361422194:web:ada999458ed68e30c753eb"
+};
+  // ====================================================
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+
+  const questionInput      = document.getElementById('questionInput');
+  const sendQuestionBtn    = document.getElementById('sendQuestionBtn');
+  const clearAllBtn        = document.getElementById('clearAllBtn');
+  const revealAllBtn       = document.getElementById('revealAllBtn');
+  const answerCount        = document.getElementById('answerCount');
+  const onairLamp          = document.getElementById('onairLamp');
+  const currentQDisplay    = document.getElementById('currentQDisplay');
+  const statusPanel        = document.getElementById('statusPanel');
+
+  // ── 質問を送信 ────────────────────────────────────
+  sendQuestionBtn.addEventListener('click', () => {
+    const q = questionInput.value.trim();
+    if (!q) { shakeEl(questionInput); return; }
+
+    set(ref(db, 'session/question'), q);
+    set(ref(db, 'session/accepting'), true);
+    remove(ref(db, 'session/answers'));
+    set(ref(db, 'session/revealAll'), false);
+
+    questionInput.value = '';
+    onairLamp.classList.add('on');
+    currentQDisplay.textContent = q;
+    showToast("📡 質問を送信しました！");
+    playBuzz();
+  });
+
+  // ── 全員オープン ──────────────────────────────────
+  revealAllBtn.addEventListener('click', () => {
+    set(ref(db, 'session/revealAll'), true);
+    showToast("🎉 全員の回答を公開！");
+  });
+
+  // ── リセット ──────────────────────────────────────
+  clearAllBtn.addEventListener('click', () => {
+    if (!confirm("全回答をリセットしますか？")) return;
+    remove(ref(db, 'session/answers'));
+    set(ref(db, 'session/accepting'), false);
+    set(ref(db, 'session/question'), "");
+    set(ref(db, 'session/revealAll'), false);
+    answerCount.textContent = '0';
+    onairLamp.classList.remove('on');
+    currentQDisplay.textContent = '（まだ質問がありません）';
+    showToast("🔄 リセット完了！");
+  });
+
+  // ── 回答件数をリアルタイム監視 ───────────────────
+  onValue(ref(db, 'session/answers'), snap => {
+    const answered = snap.val() ? Object.keys(snap.val()).length : 0;
+    document.getElementById('answeredCount').textContent = answered;
+    updateFraction();
+  });
+
+  // ── 接続人数をリアルタイム監視 ───────────────────
+  onValue(ref(db, 'presence'), snap => {
+    const total = snap.val() ? Object.keys(snap.val()).length : 0;
+    document.getElementById('totalCount').textContent = total;
+    updateFraction();
+  });
+
+  function updateFraction() {
+    const answered = document.getElementById('answeredCount').textContent;
+    const total    = document.getElementById('totalCount').textContent;
+    document.getElementById('answerCount').textContent = `${answered} / ${total}`;
+  }
+
+  // ── 現在の質問を監視（ページ読み込み時に反映） ───
+  onValue(ref(db, 'session/question'), snap => {
+    const q = snap.val();
+    currentQDisplay.textContent = q || '（まだ質問がありません）';
+    if (q) onairLamp.classList.add('on');
+    else   onairLamp.classList.remove('on');
+  });
+
+  // ── 効果音 ────────────────────────────────────────
+  function playBuzz() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      [0, 0.08, 0.16].forEach(t => {
+        const o = ctx.createOscillator(), g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.frequency.value = 880 + t * 200;
+        g.gain.setValueAtTime(0.15, ctx.currentTime + t);
+        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + t + 0.15);
+        o.start(ctx.currentTime + t); o.stop(ctx.currentTime + t + 0.15);
+      });
+    } catch(e){}
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+  function shakeEl(el) {
+    el.classList.remove('shake'); void el.offsetWidth;
+    el.classList.add('shake');
+    setTimeout(() => el.classList.remove('shake'), 500);
+  }
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg; t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 2800);
+  }
+</script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=M+PLUS+Rounded+1c:wght@400;700;900&display=swap');
+:root {
+  --yellow:#FFE600; --red:#FF3B3B; --blue:#0057FF; --green:#00C853;
+  --bg:#1a0a2e; --radius:16px;
+}
+*{ box-sizing:border-box; margin:0; padding:0; }
+body{
+  font-family:'M PLUS Rounded 1c',sans-serif;
+  background:var(--bg); min-height:100vh; color:#fff;
+  background-image:
+    repeating-linear-gradient(0deg,transparent,transparent 39px,#ffffff08 40px),
+    repeating-linear-gradient(90deg,transparent,transparent 39px,#ffffff08 40px);
+}
+
+/* ── ヘッダー ── */
+header{
+  background:#111; border-bottom:4px solid var(--yellow);
+  padding:0 20px; height:64px;
+  display:flex; align-items:center; gap:16px;
+  position:sticky; top:0; z-index:200;
+}
+.onair-lamp{
+  display:flex; align-items:center; gap:8px;
+  background:#222; border:2px solid #444;
+  border-radius:30px; padding:6px 14px 6px 10px; transition:all .3s;
+}
+.lamp-dot{
+  width:14px; height:14px; border-radius:50%;
+  background:#444; transition:background .3s,box-shadow .3s;
+}
+.onair-lamp.on{ border-color:var(--red); background:#2a0000; }
+.onair-lamp.on .lamp-dot{
+  background:var(--red);
+  box-shadow:0 0 10px var(--red),0 0 20px #ff000066;
+  animation:blink 1s infinite;
+}
+.onair-lamp.on .lamp-text{ color:var(--red); }
+.lamp-text{ font-family:'Dela Gothic One',sans-serif; font-size:13px; color:#555; letter-spacing:2px; }
+@keyframes blink{ 0%,100%{opacity:1} 50%{opacity:.4} }
+
+/* ヘッダータイトル：TAPI TAPI 小さく上、GM STUDIO 大きく下 */
+.header-title{ font-family:'Dela Gothic One',sans-serif; line-height:1.15; }
+.header-title .ht-small{
+  display:block; font-size:clamp(7px,1.6vw,10px);
+  letter-spacing:4px; color:#ffffff66; opacity:.85;
+}
+.header-title .ht-big{
+  display:block; font-size:clamp(13px,2.6vw,19px);
+  color:var(--yellow); letter-spacing:2px; text-shadow:2px 2px 0 var(--red);
+}
+
+.header-count{
+  margin-left:auto; background:var(--yellow); border-radius:30px;
+  padding:6px 18px; font-family:'Dela Gothic One',sans-serif;
+  font-size:16px; color:#111; display:flex; align-items:center; gap:6px; white-space:nowrap;
+}
+
+/* ── メイン ── */
+main{ max-width:680px; margin:0 auto; padding:24px 16px 48px; }
+
+/* ── 現在の質問テロップ ── */
+.telop-bar{
+  background:#111; border-radius:var(--radius); padding:14px 20px;
+  margin-bottom:20px; display:flex; align-items:center; gap:14px;
+  border:3px solid #333; min-height:58px;
+}
+.telop-label{
+  font-family:'Dela Gothic One',sans-serif; font-size:11px; letter-spacing:3px;
+  color:var(--yellow); background:var(--red); padding:4px 10px;
+  border-radius:6px; white-space:nowrap; flex-shrink:0;
+}
+#currentQDisplay{ font-size:17px; font-weight:900; color:#fff; line-height:1.4; }
+
+/* ── 質問入力パネル ── */
+.q-panel{
+  background:var(--yellow); border-radius:var(--radius); padding:20px;
+  margin-bottom:16px; border:3px solid #111; box-shadow:6px 6px 0 #111;
+  position:relative; overflow:hidden;
+}
+.q-panel::before{
+  content:'📺'; position:absolute; right:16px; top:50%;
+  transform:translateY(-50%); font-size:64px; opacity:.1; pointer-events:none;
+}
+.q-label{
+  font-family:'Dela Gothic One',sans-serif; font-size:11px; letter-spacing:4px;
+  background:#111; color:var(--yellow); display:inline-block;
+  padding:3px 12px; border-radius:6px; margin-bottom:12px;
+}
+.q-input-row{ display:flex; gap:10px; flex-wrap:wrap; }
+#questionInput{
+  flex:1; min-width:0; background:#fff; border:3px solid #111;
+  border-radius:10px; padding:12px 16px;
+  font-family:'M PLUS Rounded 1c',sans-serif; font-size:16px; font-weight:700; color:#111;
+  outline:none; transition:border-color .15s,box-shadow .15s; -webkit-appearance:none;
+}
+#questionInput:focus{ border-color:var(--blue); box-shadow:3px 3px 0 var(--blue); }
+#questionInput::placeholder{ color:#bbb; font-weight:400; }
+
+/* ── ボタン ── */
+.btn{
+  font-family:'Dela Gothic One',sans-serif; border:3px solid #111;
+  border-radius:10px; padding:12px 20px; font-size:15px;
+  cursor:pointer; transition:all .1s; white-space:nowrap; letter-spacing:1px;
+}
+.btn:active{ transform:translate(4px,4px)!important; box-shadow:none!important; }
+
+.btn-send{ background:var(--blue); color:#fff; box-shadow:4px 4px 0 #111; }
+.btn-send:hover{ box-shadow:6px 6px 0 #111; transform:translate(-1px,-1px); }
+
+/* ── アクションエリア ── */
+.action-row{
+  display:flex; gap:10px; flex-wrap:wrap; margin-bottom:16px;
+}
+.btn-reveal{ background:var(--green); color:#fff; box-shadow:4px 4px 0 #111; flex:1; }
+.btn-reveal:hover{ box-shadow:6px 6px 0 #111; transform:translate(-1px,-1px); }
+.btn-reset{ background:#fff; color:var(--red); border:3px solid var(--red); box-shadow:4px 4px 0 var(--red); flex:1; }
+.btn-reset:hover{ box-shadow:6px 6px 0 var(--red); transform:translate(-1px,-1px); }
+
+/* ── ステータスパネル ── */
+.status-panel{
+  background:#ffffff0f; border:2px solid #ffffff22;
+  border-radius:var(--radius); padding:20px 24px;
+}
+.status-title{
+  font-family:'Dela Gothic One',sans-serif; font-size:11px;
+  letter-spacing:3px; color:var(--yellow); margin-bottom:14px;
+}
+.status-big{
+  font-family:'Dela Gothic One',sans-serif;
+  font-size:clamp(32px,8vw,52px);
+  color:#fff; line-height:1.1;
+  display:flex; align-items:baseline; gap:4px; flex-wrap:wrap;
+}
+.status-big #answeredCount{ color:var(--yellow); text-shadow:2px 2px 0 var(--red); }
+.status-big #totalCount   { color:#aaa; }
+.status-sep { color:#555; font-size:.7em; }
+.status-unit{ color:#888; font-size:clamp(13px,3vw,18px); margin-left:6px; }
+
+/* ── トースト ── */
+#toast{
+  position:fixed; bottom:30px; left:50%;
+  transform:translateX(-50%) translateY(100px);
+  background:#111; color:var(--yellow);
+  font-family:'Dela Gothic One',sans-serif; font-size:15px;
+  padding:14px 28px; border-radius:40px;
+  border:3px solid var(--yellow); box-shadow:4px 4px 0 var(--yellow);
+  transition:transform .3s cubic-bezier(0.34,1.56,0.64,1);
+  z-index:999; white-space:nowrap; letter-spacing:2px;
+}
+#toast.show{ transform:translateX(-50%) translateY(0); }
+.shake{ animation:shake .4s ease; }
+@keyframes shake{ 0%,100%{transform:translateX(0)} 25%{transform:translateX(-8px)} 75%{transform:translateX(8px)} }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="onair-lamp" id="onairLamp">
+    <div class="lamp-dot"></div>
+    <div class="lamp-text">ON AIR</div>
+  </div>
+  <div class="header-title">
+    <span class="ht-small">TAPI TAPI</span>
+    <span class="ht-big">GM CONTROL</span>
+  </div>
+  <div class="header-count">📬 <span id="answerCount">0</span> 件</div>
+</header>
+
+<main>
+
+  <!-- 現在の質問テロップ -->
+  <div class="telop-bar">
+    <div class="telop-label">NOW</div>
+    <div id="currentQDisplay">（まだ質問がありません）</div>
+  </div>
+
+  <!-- 質問入力 -->
+  <div class="q-panel">
+    <div class="q-label">QUESTION</div>
+    <div class="q-input-row">
+      <input id="questionInput" type="text" placeholder="全員への質問を入力…" maxlength="60" />
+      <button class="btn btn-send" id="sendQuestionBtn">📡 送信！</button>
+    </div>
+  </div>
+
+  <!-- 操作ボタン -->
+  <div class="action-row">
+    <button class="btn btn-reveal" id="revealAllBtn">🎉 全員オープン！</button>
+    <button class="btn btn-reset"  id="clearAllBtn">🔄 リセット</button>
+  </div>
+
+  <!-- ステータス -->
+  <div class="status-panel">
+    <div class="status-title">📊 回答状況</div>
+    <div class="status-big">
+      <span id="answeredCount">0</span>
+      <span class="status-sep"> / </span>
+      <span id="totalCount">0</span>
+      <span class="status-unit">人 回答済み</span>
+    </div>
+  </div>
+
+</main>
+
+<div id="toast"></div>
+
+
+</body>
+</html>
